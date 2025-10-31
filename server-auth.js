@@ -5,20 +5,22 @@ const cors = require('cors');
 const session = require('express-session');
 
 const app = express();
-const PORT = process.env.PORT || 3000; // Dynamiczny port dla Railway
+const PORT = process.env.PORT || 3000;
 const TASKS_FILE = path.join(__dirname, 'tasks.json');
 const USERS_FILE = path.join(__dirname, 'users.json');
 
-// Session configuration
+// POPRAWIONA konfiguracja sesji dla Render (HTTPS)
 app.use(session({
   secret: process.env.SESSION_SECRET || 'planning-task-manager-secret-key-2024',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // HTTPS w produkcji
+    secure: false, // ZMIENIONE: false dla kompatybilności (Render używa proxy)
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 godziny
-  }
+    maxAge: 24 * 60 * 60 * 1000, // 24 godziny
+    sameSite: 'lax' // DODANE: dla lepszej kompatybilności
+  },
+  proxy: true // DODANE: Render używa proxy
 }));
 
 // Middleware
@@ -96,6 +98,7 @@ async function writeTasks(tasks) {
 
 // Sprawdź sesję
 app.get('/api/check-session', (req, res) => {
+  console.log('Sprawdzanie sesji:', req.session); // DEBUG
   if (req.session && req.session.userId) {
     res.json({
       loggedIn: true,
@@ -116,6 +119,8 @@ app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     
+    console.log('Próba logowania:', username); // DEBUG
+    
     if (!username || !password) {
       return res.status(400).json({ error: 'Brak nazwy użytkownika lub hasła' });
     }
@@ -130,14 +135,24 @@ app.post('/api/login', async (req, res) => {
       req.session.fullName = user.fullName;
       req.session.role = user.role;
       
-      res.json({
-        success: true,
-        user: {
-          id: user.id,
-          username: user.username,
-          fullName: user.fullName,
-          role: user.role
+      // WAŻNE: Zapisz sesję przed odpowiedzią
+      req.session.save((err) => {
+        if (err) {
+          console.error('Błąd zapisu sesji:', err);
+          return res.status(500).json({ error: 'Błąd zapisu sesji' });
         }
+        
+        console.log('Sesja zapisana:', req.session); // DEBUG
+        
+        res.json({
+          success: true,
+          user: {
+            id: user.id,
+            username: user.username,
+            fullName: user.fullName,
+            role: user.role
+          }
+        });
       });
     } else {
       res.status(401).json({ error: 'Nieprawidłowa nazwa użytkownika lub hasło' });
@@ -360,10 +375,7 @@ app.listen(PORT, '0.0.0.0', () => {
   GET    /api/backup         - Eksportuj backup
   POST   /api/import         - Importuj dane
 
-  Konta testowe:
-  admin / admin123
-  witold / witold123
-  user / user123
+ 
 ===============================================================
   `);
 });
