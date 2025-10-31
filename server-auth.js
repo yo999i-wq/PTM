@@ -334,11 +334,7 @@ app.listen(PORT, '0.0.0.0', () => {
   - POST /api/tasks
   - PUT  /api/tasks/:id
   - DELETE /api/tasks/:id
-  
-  Konta domyślne:
-  - admin / admin123
-  - witold / witold123
-  - user / user123
+ 
 ===============================================================
   `);
 });
