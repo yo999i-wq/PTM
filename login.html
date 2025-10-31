@@ -230,12 +230,7 @@
                 </button>
             </form>
             
-            <div class="info-box">
-                <strong>🔑 Konta testowe:</strong>
-                Admin: <code>admin</code> / <code>admin123</code><br>
-                Witold: <code>witold</code> / <code>witold123</code><br>
-                User: <code>user</code> / <code>user123</code>
-            </div>
+          
         </div>
     </div>
 
@@ -251,13 +246,7 @@
         
         async function checkSession() {
             try {
-                const response = await fetch('/api/check-session');
-                const data = await response.json();
-                
-                if (data.loggedIn) {
-                    // Użytkownik już zalogowany - przekieruj
-                    window.location.href = '/index.html';
-                }
+                const response = await // removed for static mode
             } catch (error) {
                 console.log('Nie zalogowany');
             }
@@ -330,5 +319,32 @@
             }
         });
     </script>
+
+<script>
+async function checkSession() {
+  const logged = localStorage.getItem('ptm_logged_in');
+  if (logged) {
+    window.location.href = './index_local.html';
+  }
+}
+checkSession();
+
+async function doLogin(username, password) {
+  try {
+    const resp = await fetch('./users.json', { cache: 'no-store' });
+    const users = await resp.json();
+    const found = users.find(u => u.username === username && u.password === password);
+    if (found) {
+      localStorage.setItem('ptm_logged_in', JSON.stringify({ username: found.username, name: found.fullName }));
+      window.location.href = './index_local.html';
+    } else {
+      alert('Nieprawidłowy login lub hasło');
+    }
+  } catch (e) {
+    alert('Błąd wczytywania users.json');
+  }
+}
+</script>
+
 </body>
 </html>
