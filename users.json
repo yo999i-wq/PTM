@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "username": "MAKU",
+    "password": "admin123",
+    "fullName": "Mateusz Kulasa",
+    "role": "admin"
+  },
+  {
+    "id": 2,
+    "username": "WMIK",
+    "password": "witold123",
+    "fullName": "Witold Mikołajczak",
+    "role": "admin"
+  },
+  {
+    "id": 3,
+    "username": "user",
+    "password": "user123",
+    "fullName": "Użytkownik Testowy",
+    "role": "user"
+  }
+]

@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planning Task Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; }
+        #root { height: 100vh; width: 100vw; overflow: hidden; }
+        .lucide { width: 20px; height: 20px; stroke-width: 2; }
+        .checkbox-filter { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border: 1px solid #d1d5db; border-radius: 0.375rem; background: white; cursor: pointer; user-select: none; }
+        .checkbox-filter:hover { background: #f3f4f6; }
+        .checkbox-filter input[type="checkbox"] { width: 1rem; height: 1rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
+        const API_URL = '/api';
+
+        // Ikony SVG
+        const FilterIcon = () => <svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
+        const PlusIcon = () => <svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+        const MenuIcon = () => <svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>;
+        const XIcon = () => <svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+        const AlertCircleIcon = () => <svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
+        const FileTextIcon = () => <svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
+        const ClockIcon = () => <svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+        const EditIcon = () => <svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+        const DownloadIcon = () => <svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
+
+        const PlanningTaskManager = () => {
+          const [selectedTask, setSelectedTask] = useState(null);
+          const [showAddForm, setShowAddForm] = useState(false);
+          const [showEditForm, setShowEditForm] = useState(false);
+          
+          // Filtry
+          const [indeksFilter, setIndeksFilter] = useState('');
+          const [nrZleceniaFilter, setNrZleceniaFilter] = useState('');
+          const [nazwaZleceniaFilter, setNazwaZleceniaFilter] = useState('');
+          const [nazwaUrzadzeniaFilter, setNazwaUrzadzeniaFilter] = useState('');
+          const [statusFilter, setStatusFilter] = useState('all');
+          const [typZadaniaFilter, setTypZadaniaFilter] = useState('all');
+          const [osobaKontaktFilter, setOsobaKontaktFilter] = useState('all');
+          
+          // Checkboxy
+          const [filterMoje, setFilterMoje] = useState(false);
+          const [filterUkryjZamkniete, setFilterUkryjZamkniete] = useState(false);
+          const [filterOpoznione, setFilterOpoznione] = useState(false);
+          const [filterBOM, setFilterBOM] = useState(false);
+          const [filterWrzutki, setFilterWrzutki] = useState(false);
+          
+          const [tasks, setTasks] = useState([]);
+          const [loading, setLoading] = useState(true);
+          const [error, setError] = useState(null);
+
+          const loadTasks = async () => {
+            try {
+              setLoading(true);
+              const response = await fetch(`${API_URL}/tasks`);
+              if (!response.ok) throw new Error('Błąd pobierania danych');
+              const data = await response.json();
+              setTasks(data);
+              setError(null);
+            } catch (err) {
+              setError('Nie można połączyć z serwerem. Upewnij się, że serwer działa.');
+              console.error('Błąd:', err);
+            } finally {
+              setLoading(false);
+            }
+          };
+
+          useEffect(() => { loadTasks(); }, []);
+
+          const statusOptions = ['Przekazane na produkcję', 'Oczekuje', 'Gotowe do generowania', 'Gotowe do druku', 'Opracowywane', 'Anulowane'];
+          const typZadaniaOptions = ['Nowa pozycja zlecenia', 'Zmiana', 'Dodatek', 'Brak'];
+          const rodzajOptions = ['Brak', 'Zmiana technologii - konieczna nowa składnica', 'wyłącznie PAK - Pakowanie składników', 'Dodanie składników - dodatkowy materiał', 'Zmiana rodzaju składnika'];
+          const pakowanieOptions = ['Pakowanie bez montażu', 'Montaż z pakowaniem', 'Pakowanie bez produkcji'];
+          const wykonczenieOptions = ['Malowanie', 'Cynkowanie', 'Anodowanie', 'Brak'];
+          const osobyOptions = ['Jakub Nowak', 'Wojciech Misiuk', 'Atena Wszoła', 'Julia Gołębiowska', 'Marcin Galka', 'Łukasz Jędraszak', 'Krystian Wilkowski'];
+const technolodzyOptions = [
+    'Wojciech Misiuk',
+  'Atena Wszoła',
+  'Julia Gołębiowska'
+ ];
+
+
+          const getStatusColor = (status) => {
+            const colors = {
+              'Przekazane na produkcję': 'bg-green-100 text-green-800',
+              'Oczekuje': 'bg-orange-100 text-orange-800',
+              'Gotowe do generowania': 'bg-yellow-100 text-yellow-800',
+              'Gotowe do druku': 'bg-blue-100 text-blue-800',
+              'Opracowywane': 'bg-purple-100 text-purple-800',
+              'Anulowane': 'bg-teal-100 text-teal-800'
+              
+            };
+            return colors[status] || 'bg-gray-100 text-gray-800';
+          };
+
+          const filteredTasks = useMemo(() => {
+            return tasks.filter(task => {
+              const matchesIndeks = indeksFilter === '' || (task.indeks && task.indeks.toLowerCase().includes(indeksFilter.toLowerCase()));
+              const matchesNrZlecenia = nrZleceniaFilter === '' || (task.nrZlecenia && task.nrZlecenia.toLowerCase().includes(nrZleceniaFilter.toLowerCase()));
+              const matchesNazwaZlecenia = nazwaZleceniaFilter === '' || (task.nazwaZlecenia && task.nazwaZlecenia.toLowerCase().includes(nazwaZleceniaFilter.toLowerCase()));
+              const matchesNazwaUrzadzenia = nazwaUrzadzeniaFilter === '' || (task.nazwaUrzadzenia && task.nazwaUrzadzenia.toLowerCase().includes(nazwaUrzadzeniaFilter.toLowerCase()));
+              const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
+              const matchesTypZadania = typZadaniaFilter === 'all' || task.typZadania === typZadaniaFilter;
+              const matchesOsobaKontakt = osobaKontaktFilter === 'all' || task.osobaKontakt === osobaKontaktFilter;
+              const matchesMoje = !filterMoje || task.osobaKontakt === 'Europa Systems';
+              const matchesUkryjZamkniete = !filterUkryjZamkniete || (task.status !== 'Przekazane na produkcję' && task.status !== 'Zamknięte');
+              const matchesOpoznione = !filterOpoznione || new Date(task.wykonacDo) < new Date();
+              const matchesBOM = !filterBOM || task.bom === true;
+              const matchesWrzutki = !filterWrzutki || task.typZadania === 'Nowa pozycja zlecenia';
+              
+              return matchesIndeks && matchesNrZlecenia && matchesNazwaZlecenia && matchesNazwaUrzadzenia &&
+                     matchesStatus && matchesTypZadania && matchesOsobaKontakt && matchesMoje && 
+                     matchesUkryjZamkniete && matchesOpoznione && matchesBOM && matchesWrzutki;
+            });
+          }, [tasks, indeksFilter, nrZleceniaFilter, nazwaZleceniaFilter, nazwaUrzadzeniaFilter, statusFilter, typZadaniaFilter, osobaKontaktFilter, filterMoje, filterUkryjZamkniete, filterOpoznione, filterBOM, filterWrzutki]);
+
+          const stats = useMemo(() => ({
+            total: filteredTasks.length,
+            wrzutki: tasks.filter(t => t.typZadania === 'Nowa pozycja zlecenia').length,
+            opoznione: tasks.filter(t => new Date(t.wykonacDo) < new Date()).length,
+            wstrzymane: tasks.filter(t => t.status === 'Oczekuje').length
+          }), [tasks, filteredTasks]);
+
+          const addTask = async (newTask) => {
+            try {
+              const response = await fetch(`${API_URL}/tasks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newTask)
+              });
+              if (response.ok) { await loadTasks(); setShowAddForm(false); } 
+              else { alert('Błąd dodawania zadania'); }
+            } catch (err) { console.error('Błąd:', err); alert('Nie można połączyć z serwerem'); }
+          };
+
+          const updateTask = async (updatedTask) => {
+            try {
+              const response = await fetch(`${API_URL}/tasks/${updatedTask.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedTask)
+              });
+              if (response.ok) { await loadTasks(); setShowEditForm(false); setSelectedTask(updatedTask); } 
+              else { alert('Błąd aktualizacji zadania'); }
+            } catch (err) { console.error('Błąd:', err); alert('Nie można połączyć z serwerem'); }
+          };
+
+          const deleteTask = async (taskId) => {
+            if (!confirm('Czy na pewno chcesz usunąć to zadanie?')) return;
+            try {
+              const response = await fetch(`${API_URL}/tasks/${taskId}`, { method: 'DELETE' });
+              if (response.ok) { await loadTasks(); setSelectedTask(null); } 
+              else { alert('Błąd usuwania zadania'); }
+            } catch (err) { console.error('Błąd:', err); alert('Nie można połączyć z serwerem'); }
+          };
+
+          const exportBackup = async () => {
+            try {
+              const response = await fetch(`${API_URL}/backup`);
+              const blob = await response.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `tasks-backup-${new Date().toISOString().slice(0,10)}.json`;
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(url);
+              document.body.removeChild(a);
+            } catch (err) { console.error('Błąd:', err); alert('Nie można wyeksportować danych'); }
+          };
+
+          // ROZSZERZONY FORMULARZ DODAWANIA (wszystkie pola z Power Apps)
+          const TaskForm = ({ task, onSubmit, onCancel }) => {
+            const [formData, setFormData] = useState(task || {
+              typZadania: 'Nowa pozycja zlecenia',
+              rodzaj: 'Brak',
+              status: 'Oczekuje',
+              nrZlecenia: '',
+              nazwaZlecenia: '',
+              indeks: '',
+              ilosc: '',
+              nazwaUrzadzenia: '',
+              wykonacDo: '',
+              gotoweDoProdukcji: false,
+              zbiorUrzadzen: false,
+              osobaKontakt: '',
+              osobyDW: '',
+              pakowanie: '',
+              wykonczenie: '',
+              koloryMalowania: '',
+              materialyZReki: '',
+              uwagi: '',
+              niezgodnosc: false,
+              nrNiezgodnosci: '',
+              dotyczyUrzadzenia: '',
+              oddzielnaPozycja: false,
+              montaz: '',
+              kategoria: '',
+              powod: '',
+              pozycjaZLayoutu: '',
+              nowaBazaPDM: 'Nie',
+              listaPAK: '',
+              lpRekord: '',
+              uwagiDPP: '',
+              dataGotowosci: ''
+            });
+
+            return (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+                <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full my-8">
+                  <div className="bg-orange-600 text-white p-4 flex justify-between items-center sticky top-0 z-10">
+                    <h2 className="text-xl font-bold">Planning Task Manager &gt; {task ? 'Edytuj zadanie' : 'Dodaj zadanie'}</h2>
+                    <button onClick={onCancel} className="hover:bg-orange-700 p-2 rounded"><XIcon /></button>
+                  </div>
+                  
+                  <div className="p-6 max-h-[75vh] overflow-y-auto">
+                    <div className="grid grid-cols-3 gap-4">
+                      
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Typ zadania *</label>
+                        <select className="w-full border-2 border-gray-300 rounded p-2 bg-white" value={formData.typZadania} onChange={(e) => setFormData({...formData, typZadania: e.target.value})}>
+                          {typZadaniaOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      </div>
+<div>
+  <label className="block text-sm font-semibold mb-2 text-orange-800">Status *</label>
+  <select
+    className="w-full border-2 border-gray-300 rounded p-2 bg-white"
+    value={formData.status}
+    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+  >
+    {statusOptions.map(opt => (
+      <option key={opt} value={opt}>{opt}</option>
+    ))}
+  </select>
+</div>
+
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Rodzaj zmiany/dodatku *</label>
+                        <select className="w-full border-2 border-gray-300 rounded p-2 bg-white" value={formData.rodzaj} onChange={(e) => setFormData({...formData, rodzaj: e.target.value})}>
+                          {rodzajOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Pozycja z layoutu</label>
+                        <input type="text" className="w-full border-2 border-gray-300 rounded p-2" value={formData.pozycjaZLayoutu} onChange={(e) => setFormData({...formData, pozycjaZLayoutu: e.target.value})} />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Nr zlecenia *</label>
+                        <input type="text" placeholder="np. PRO 2024 00380" className="w-full border-2 border-gray-300 rounded p-2" value={formData.nrZlecenia} onChange={(e) => setFormData({...formData, nrZlecenia: e.target.value})} />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Nazwa zlecenia *</label>
+                        <input type="text" placeholder="np. Cimcorp Pirelli" className="w-full border-2 border-gray-300 rounded p-2" value={formData.nazwaZlecenia} onChange={(e) => setFormData({...formData, nazwaZlecenia: e.target.value})} />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Indeks urządzenia</label>
+                        <input type="text" placeholder="np. W-CON-25.029394.27" className="w-full border-2 border-gray-300 rounded p-2" value={formData.indeks} onChange={(e) => setFormData({...formData, indeks: e.target.value})} />
+                      </div>
+
+                      <div className="col-span-2">
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Nazwa urządzenia</label>
+                        <input type="text" placeholder="np. Osłony pod BLT S3 1/2" className="w-full border-2 border-gray-300 rounded p-2" value={formData.nazwaUrzadzenia} onChange={(e) => setFormData({...formData, nazwaUrzadzenia: e.target.value})} />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Sztuk</label>
+                        <input type="number" placeholder="1" className="w-full border-2 border-gray-300 rounded p-2" value={formData.ilosc} onChange={(e) => setFormData({...formData, ilosc: e.target.value})} />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Wykonać do *</label>
+                        <input type="date" className="w-full border-2 border-gray-300 rounded p-2" value={formData.wykonacDo} onChange={(e) => setFormData({...formData, wykonacDo: e.target.value})} />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Data gotowości do produkcji</label>
+                        <input type="date" className="w-full border-2 border-gray-300 rounded p-2" value={formData.dataGotowosci} onChange={(e) => setFormData({...formData, dataGotowosci: e.target.value})} />
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <label className="text-sm font-semibold text-orange-800">Gotowe do produkcji</label>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" className="sr-only peer" checked={formData.gotoweDoProdukcji} onChange={(e) => setFormData({...formData, gotoweDoProdukcji: e.target.checked})} />
+                          <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-orange-600"></div>
+                          <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                        </label>
+                        <span className="text-sm">{formData.gotoweDoProdukcji ? 'Tak' : 'Nie'}</span>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <label className="text-sm font-semibold text-orange-800">Zbiór urządzeń</label>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" className="sr-only peer" checked={formData.zbiorUrzadzen} onChange={(e) => setFormData({...formData, zbiorUrzadzen: e.target.checked})} />
+                          <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-orange-600"></div>
+                          <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                        </label>
+                        <span className="text-sm">{formData.zbiorUrzadzen ? 'Tak' : 'Nie'}</span>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Osoba do kontaktu</label>
+                        <select className="w-full border-2 border-gray-300 rounded p-2 bg-white" value={formData.osobaKontakt} onChange={(e) => setFormData({...formData, osobaKontakt: e.target.value})}>
+                          <option value="">Wybierz...</option>
+                          {osobyOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      </div>
+
+                     <div>
+  <label className="block text-sm font-semibold mb-2 text-orange-800">Technolog</label>
+  <select
+    className="w-full border-2 border-gray-300 rounded p-2 bg-white"
+    value={formData.osobyDW}
+    onChange={(e) => setFormData({ ...formData, osobyDW: e.target.value })}
+  >
+    <option value="">Wybierz...</option>
+    {(technolodzyOptions && technolodzyOptions.length ? technolodzyOptions : osobyOptions).map(opt => (
+      <option key={opt} value={opt}>{opt}</option>
+    ))}
+  </select>
+</div>
+
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Pakowanie *</label>
+                        <select className="w-full border-2 border-gray-300 rounded p-2 bg-white" value={formData.pakowanie} onChange={(e) => setFormData({...formData, pakowanie: e.target.value})}>
+                          <option value="">Wybierz...</option>
+                          {pakowanieOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Wykończenie</label>
+                        <select className="w-full border-2 border-gray-300 rounded p-2 bg-white" value={formData.wykonczenie} onChange={(e) => setFormData({...formData, wykonczenie: e.target.value})}>
+                          <option value="">Wybierz...</option>
+                          {wykonczenieOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Kolory malowania</label>
+                        <input type="text" className="w-full border-2 border-gray-300 rounded p-2" value={formData.koloryMalowania} onChange={(e) => setFormData({...formData, koloryMalowania: e.target.value})} />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Materiały "z ręki"</label>
+                        <input type="text" className="w-full border-2 border-gray-300 rounded p-2" value={formData.materialyZReki} onChange={(e) => setFormData({...formData, materialyZReki: e.target.value})} />
+                      </div>
+
+                      <div className="col-span-3">
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Uwagi</label>
+                        <textarea className="w-full border-2 border-gray-300 rounded p-2 h-24" value={formData.uwagi} onChange={(e) => setFormData({...formData, uwagi: e.target.value})} />
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <label className="text-sm font-semibold text-orange-800">Niezgodność</label>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" className="sr-only peer" checked={formData.niezgodnosc} onChange={(e) => setFormData({...formData, niezgodnosc: e.target.checked})} />
+                          <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-orange-600"></div>
+                          <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                        </label>
+                        <span className="text-sm">{formData.niezgodnosc ? 'Tak' : 'Nie'}</span>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Nr niezgodności</label>
+                        <input type="text" className="w-full border-2 border-gray-300 rounded p-2" value={formData.nrNiezgodnosci} onChange={(e) => setFormData({...formData, nrNiezgodnosci: e.target.value})} disabled={!formData.niezgodnosc} />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Dotyczy urządzenia/ID (przy zmianie BOM)</label>
+                        <input type="text" className="w-full border-2 border-gray-300 rounded p-2" value={formData.dotyczyUrzadzenia} onChange={(e) => setFormData({...formData, dotyczyUrzadzenia: e.target.value})} />
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <label className="text-sm font-semibold text-orange-800">Oddzielna pozycja</label>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" className="sr-only peer" checked={formData.oddzielnaPozycja} onChange={(e) => setFormData({...formData, oddzielnaPozycja: e.target.checked})} />
+                          <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-orange-600"></div>
+                          <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                        </label>
+                        <span className="text-sm">{formData.oddzielnaPozycja ? 'Tak' : 'Nie'}</span>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Montaż</label>
+                        <select className="w-full border-2 border-gray-300 rounded p-2 bg-white" value={formData.montaz} onChange={(e) => setFormData({...formData, montaz: e.target.value})}>
+                          <option value="">Wybierz...</option>
+                          <option value="Tak">Tak</option>
+                          <option value="Nie">Nie</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Kategoria</label>
+                        <select className="w-full border-2 border-gray-300 rounded p-2 bg-white" value={formData.kategoria} onChange={(e) => setFormData({...formData, kategoria: e.target.value})}>
+                          <option value="">Wybierz...</option>
+                          <option value="A">A</option>
+                          <option value="B">B</option>
+                          <option value="C">C</option>
+                        </select>
+                      </div>
+
+                      <div className="col-span-3">
+                        <label className="block text-sm font-semibold mb-2 text-orange-800">Powód</label>
+                        <textarea className="w-full border-2 border-gray-300 rounded p-2 h-20" value={formData.powod} onChange={(e) => setFormData({...formData, powod: e.target.value})} />
+                      </div>
+
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-4 flex justify-end gap-3 border-t sticky bottom-0">
+                    <button onClick={onCancel} className="px-6 py-2 border-2 border-gray-300 rounded hover:bg-gray-100 flex items-center gap-2">
+                      <XIcon /> Anuluj
+                    </button>
+                    <button onClick={() => onSubmit(formData)} className="px-6 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 font-semibold">
+                      {task ? 'Zapisz zmiany' : 'Dodaj zadanie'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
+          // ROZSZERZONY PANEL SZCZEGÓŁÓW
+          const TaskDetails = ({ task, onEdit, onDelete }) => {
+            if (!task) {
+              return (
+                <div className="bg-white border-l-4 border-orange-500 p-6 flex items-center justify-center h-full">
+                  <div className="text-gray-400 text-center">
+                    <FileTextIcon />
+                    <p className="mt-3 text-sm">Wybierz zadanie z listy<br/>aby zobaczyć szczegóły</p>
+                  </div>
+                </div>
+              );
+            }
+            
+            return (
+              <div className="bg-white border-l-4 border-orange-500 overflow-y-auto h-full">
+                <div className="bg-orange-50 p-4 border-b-2 border-orange-200">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="text-lg font-bold text-orange-800">Szczegóły</h3>
+                    <div className="flex gap-2">
+                      <button onClick={onEdit} className="bg-orange-600 text-white px-3 py-1.5 rounded flex items-center gap-2 hover:bg-orange-700 text-sm">
+                        <EditIcon /> Edytuj
+                      </button>
+                      <button onClick={() => onDelete(task.id)} className="bg-red-600 text-white px-3 py-1.5 rounded hover:bg-red-700 text-sm">
+                        Usuń
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="p-4 space-y-3 text-sm">
+                  <div className="border-b pb-2">
+                    <div className="text-xs text-gray-500 uppercase font-semibold">Status</div>
+                    <span className={`inline-block px-3 py-1 rounded mt-1 text-xs font-semibold ${getStatusColor(task.status)}`}>{task.status}</span>
+                  </div>
+                  <div className="border-b pb-2"><div className="text-xs text-gray-500 uppercase font-semibold">Typ zadania</div><div className="mt-1">{task.typZadania}</div></div>
+                  <div className="border-b pb-2"><div className="text-xs text-gray-500 uppercase font-semibold">Rodzaj</div><div className="mt-1">{task.rodzaj || '-'}</div></div>
+                  <div className="border-b pb-2"><div className="text-xs text-gray-500 uppercase font-semibold">Nr zlecenia</div><div className="mt-1 font-semibold text-blue-600">{task.nrZlecenia}</div></div>
+                  <div className="border-b pb-2"><div className="text-xs text-gray-500 uppercase font-semibold">Nazwa zlecenia</div><div className="mt-1">{task.nazwaZlecenia}</div></div>
+                  <div className="border-b pb-2"><div className="text-xs text-gray-500 uppercase font-semibold">Indeks</div><div className="mt-1 text-blue-600 font-mono">{task.indeks || '-'}</div></div>
+                  <div className="border-b pb-2"><div className="text-xs text-gray-500 uppercase font-semibold">Nazwa urządzenia</div><div className="mt-1">{task.nazwaUrzadzenia || '-'}</div></div>
+                  <div className="border-b pb-2 bg-yellow-50 -mx-4 px-4 py-2"><div className="text-xs text-gray-500 uppercase font-semibold">Wykonać do</div><div className="mt-1 font-bold text-red-600">{task.wykonacDo}</div></div>
+                  <div className="border-b pb-2"><div className="text-xs text-gray-500 uppercase font-semibold">Osoba do kontaktu</div><div className="mt-1">{task.osobaKontakt || '-'}</div></div>
+                  <div className="border-b pb-2"><div className="text-xs text-gray-500 uppercase font-semibold">Uwagi</div><div className="mt-1 whitespace-pre-wrap">{task.uwagi || '-'}</div></div>
+                </div>
+              </div>
+            );
+          };
+
+          if (loading) {
+            return (
+              <div className="flex items-center justify-center h-screen bg-orange-50">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-orange-600 mx-auto mb-4"></div>
+                  <p className="text-gray-600 font-semibold">Ładowanie danych...</p>
+                </div>
+              </div>
+            );
+          }
+
+          if (error) {
+            return (
+              <div className="flex items-center justify-center h-screen bg-red-50">
+                <div className="text-center max-w-md">
+                  <AlertCircleIcon />
+                  <h2 className="text-xl font-bold text-red-600 mt-4">Błąd połączenia</h2>
+                  <p className="text-gray-600 mt-2">{error}</p>
+                  <button onClick={loadTasks} className="mt-4 px-6 py-2 bg-orange-600 text-white rounded hover:bg-orange-700">
+                    Spróbuj ponownie
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="flex flex-col h-screen bg-gray-50">
+              {/* Header */}
+              <div className="bg-orange-600 text-white p-4 flex items-center justify-between shadow-lg">
+                <div className="flex items-center gap-4">
+                  <MenuIcon />
+                  <h1 className="text-xl font-bold">Planning Task Manager</h1>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={exportBackup} className="flex items-center gap-2 bg-orange-700 px-3 py-2 rounded hover:bg-orange-800" title="Eksportuj backup">
+                    <DownloadIcon /> Backup
+                  </button>
+                  <span className="font-semibold">Europa Systems</span>
+                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-orange-600 font-bold">ES</div>
+                </div>
+              </div>
+
+              {/* Main Content */}
+              <div className="flex flex-1 overflow-hidden">
+                {/* Tasks Table */}
+                <div className="flex-1 overflow-auto">
+                  {/* Filtry */}
+                  <div className="bg-orange-50 border-b-2 border-orange-200 p-4">
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      <FilterIcon />
+                      <input type="text" placeholder="Indeks urządzenia" className="border-2 border-gray-300 rounded px-3 py-2 w-44 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" value={indeksFilter} onChange={(e) => setIndeksFilter(e.target.value)} />
+                      <input type="text" placeholder="Nr zlecenia" className="border-2 border-gray-300 rounded px-3 py-2 w-44 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" value={nrZleceniaFilter} onChange={(e) => setNrZleceniaFilter(e.target.value)} />
+                      <input type="text" placeholder="Nazwa zlecenia" className="border-2 border-gray-300 rounded px-3 py-2 w-44 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" value={nazwaZleceniaFilter} onChange={(e) => setNazwaZleceniaFilter(e.target.value)} />
+                      <input type="text" placeholder="Nazwa urządzenia" className="border-2 border-gray-300 rounded px-3 py-2 w-44 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" value={nazwaUrzadzeniaFilter} onChange={(e) => setNazwaUrzadzeniaFilter(e.target.value)} />
+                      
+                      <select className="border-2 border-gray-300 rounded px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                        <option value="all">Status: Wszystkie</option>
+                        {statusOptions.map(status => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                      
+                      <select className="border-2 border-gray-300 rounded px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" value={typZadaniaFilter} onChange={(e) => setTypZadaniaFilter(e.target.value)}>
+                        <option value="all">Typ: Wszystkie</option>
+                        {typZadaniaOptions.map(typ => <option key={typ} value={typ}>{typ}</option>)}
+                      </select>
+                      
+                      <select className="border-2 border-gray-300 rounded px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" value={osobaKontaktFilter} onChange={(e) => setOsobaKontaktFilter(e.target.value)}>
+                        <option value="all">Osoba: Wszystkie</option>
+                        {osobyOptions.map(osoba => <option key={osoba} value={osoba}>{osoba}</option>)}
+                      </select>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="checkbox-filter">
+                        <input type="checkbox" checked={filterMoje} onChange={(e) => setFilterMoje(e.target.checked)} />
+                        <span className="text-sm font-semibold">Moje</span>
+                      </label>
+                      <label className="checkbox-filter">
+                        <input type="checkbox" checked={filterUkryjZamkniete} onChange={(e) => setFilterUkryjZamkniete(e.target.checked)} />
+                        <span className="text-sm font-semibold">Ukryj zamknięte</span>
+                      </label>
+                      <label className="checkbox-filter">
+                        <input type="checkbox" checked={filterOpoznione} onChange={(e) => setFilterOpoznione(e.target.checked)} />
+                        <span className="text-sm font-semibold">Opóźnione</span>
+                      </label>
+                      <label className="checkbox-filter">
+                        <input type="checkbox" checked={filterBOM} onChange={(e) => setFilterBOM(e.target.checked)} />
+                        <span className="text-sm font-semibold">BOM</span>
+                      </label>
+                      <label className="checkbox-filter">
+                        <input type="checkbox" checked={filterWrzutki} onChange={(e) => setFilterWrzutki(e.target.checked)} />
+                        <span className="text-sm font-semibold">Wrzutki</span>
+                      </label>
+                      <button onClick={() => setShowAddForm(true)} className="ml-auto bg-orange-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-orange-700 font-semibold">
+                        <PlusIcon /> Dodaj
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tabela z WSZYSTKIMI kolumnami */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100 sticky top-0 shadow-sm">
+                        <tr>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Status</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Typ zadania</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Rodzaj</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Nr i nazwa zlecenia</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Indeks i ilość</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Nazwa urządzenia</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Wykonać do</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Data gotowości</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Technolog</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">LP Rekord (nr)</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Osoba do kontaktu</th>
+                          <th className="p-2 text-left text-xs font-bold whitespace-nowrap">Uwagi DPP</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredTasks.map((task) => (
+                          <tr 
+                            key={task.id}
+                            onClick={() => setSelectedTask(task)}
+                            className={`border-b hover:bg-orange-50 cursor-pointer transition ${
+                              selectedTask?.id === task.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                            } ${new Date(task.wykonacDo) < new Date() ? 'bg-red-50' : ''}`}
+                          >
+                            <td className="p-2">
+                              <span className={`px-2 py-1 rounded text-xs font-semibold whitespace-nowrap ${getStatusColor(task.status)}`}>
+                                {task.status}
+                              </span>
+                            </td>
+                            <td className="p-2 text-xs whitespace-nowrap">{task.typZadania}</td>
+                            <td className="p-2 text-xs whitespace-nowrap">{task.rodzaj}</td>
+                            <td className="p-2 text-xs">
+                              <div className="font-semibold text-blue-600">{task.nrZlecenia}</div>
+                              <div className="text-gray-600">{task.nazwaZlecenia}</div>
+                            </td>
+                            <td className="p-2 text-xs">
+                              <div className="text-blue-600 font-mono">{task.indeks || '-'}</div>
+                              <div className="text-gray-600">Ilość: {task.ilosc || '-'}</div>
+                            </td>
+                            <td className="p-2 text-xs max-w-xs truncate">{task.nazwaUrzadzenia || '-'}</td>
+                            <td className={`p-2 text-xs font-semibold whitespace-nowrap ${new Date(task.wykonacDo) < new Date() ? 'text-red-600' : ''}`}>
+                              {task.wykonacDo}
+                            </td>
+                            <td className="p-2 text-xs whitespace-nowrap">{task.dataGotowosci || '-'}</td>
+                            <td className="p-2 text-xs whitespace-nowrap">{task.osobyDW || '-'}</td>
+                            <td className="p-2 text-xs whitespace-nowrap">{task.lpRekord || '-'}</td>
+                            <td className="p-2 text-xs whitespace-nowrap">{task.osobaKontakt || '-'}</td>
+                            <td className="p-2 text-xs max-w-xs truncate">{task.uwagiDPP || '-'}</td>
+                          </tr>
+                        ))}
+                        {filteredTasks.length === 0 && (
+                          <tr>
+                            <td colSpan="12" className="p-8 text-center text-gray-400">
+                              Brak zadań spełniających kryteria filtrowania
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Details Panel */}
+                <div className="w-96 h-full">
+                  <TaskDetails task={selectedTask} onEdit={() => setShowEditForm(true)} onDelete={deleteTask} />
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="bg-orange-700 text-white p-3 flex items-center gap-8 text-sm shadow-lg">
+                <div className="flex items-center gap-2"><ClockIcon /><span>Zadań: <strong className="text-lg">{stats.total}</strong></span></div>
+                <div>Wrzutki: <strong className="text-lg">{stats.wrzutki}</strong></div>
+                <div>Opóźnionych: <strong className="text-lg text-yellow-300">{stats.opoznione}</strong></div>
+                <div>Wstrzymanych: <strong className="text-lg">{stats.wstrzymane}</strong></div>
+              </div>
+
+              {/* Forms */}
+              {showAddForm && <TaskForm onSubmit={addTask} onCancel={() => setShowAddForm(false)} />}
+              {showEditForm && selectedTask && <TaskForm task={selectedTask} onSubmit={updateTask} onCancel={() => setShowEditForm(false)} />}
+            </div>
+          );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<PlanningTaskManager />);
+    </script>
+</body>
+</html>

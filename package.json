@@ -1,0 +1,29 @@
+{
+  "name": "planning-task-manager",
+  "version": "2.0.0",
+  "description": "System zarządzania zadaniami produkcyjnymi z logowaniem",
+  "main": "server-auth.js",
+  "scripts": {
+    "start": "node server-auth.js",
+    "dev": "nodemon server-auth.js"
+  },
+  "keywords": [
+    "task",
+    "management",
+    "production",
+    "authentication"
+  ],
+  "author": "Witold Mikołajczak",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "express-session": "^1.18.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
