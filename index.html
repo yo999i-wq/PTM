@@ -4,66 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Planning Task Manager</title>
-    <script src="https://cdn.tailwindcss.com">
-  // prosta kontrola "sesji" (client-side only)
-  function ensureLoggedIn() {
-    try {
-      const flag = localStorage.getItem('ptm_logged_in');
-      if (!flag) {
-        window.location.href = './login.html';
-      }
-    } catch (_) {
-      // jeśli localStorage niedostępny, przejdź dalej
-    }
-  }
-  ensureLoggedIn();
-
-</script>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js">
-  // prosta kontrola "sesji" (client-side only)
-  function ensureLoggedIn() {
-    try {
-      const flag = localStorage.getItem('ptm_logged_in');
-      if (!flag) {
-        window.location.href = './login.html';
-      }
-    } catch (_) {
-      // jeśli localStorage niedostępny, przejdź dalej
-    }
-  }
-  ensureLoggedIn();
-
-</script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js">
-  // prosta kontrola "sesji" (client-side only)
-  function ensureLoggedIn() {
-    try {
-      const flag = localStorage.getItem('ptm_logged_in');
-      if (!flag) {
-        window.location.href = './login.html';
-      }
-    } catch (_) {
-      // jeśli localStorage niedostępny, przejdź dalej
-    }
-  }
-  ensureLoggedIn();
-
-</script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js">
-  // prosta kontrola "sesji" (client-side only)
-  function ensureLoggedIn() {
-    try {
-      const flag = localStorage.getItem('ptm_logged_in');
-      if (!flag) {
-        window.location.href = './login.html';
-      }
-    } catch (_) {
-      // jeśli localStorage niedostępny, przejdź dalej
-    }
-  }
-  ensureLoggedIn();
-
-</script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <style>
         body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; }
@@ -79,42 +23,7 @@
 
     <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
-
-  // ===== STATIC FULL CRUD (localStorage) =====
-  const STORAGE_KEY = 'ptm_tasks';
-
-  async function seedFromJsonIfNeeded() {
-    const existing = localStorage.getItem(STORAGE_KEY);
-    if (!existing) {
-      try {
-        const resp = await fetch('./tasks.json', { cache: 'no-store' });
-        if (resp.ok) {
-          const data = await resp.json();
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        } else {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
-        }
-      } catch (e) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
-      }
-    }
-  }
-
-  function getTasksLS() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  function setTasksLS(arr) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-    return arr;
-  }
-
-        const API_URL = '';// static mode
+        const API_URL = '/api';
 
         // Ikony SVG
         const FilterIcon = () => <svg className="lucide" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
@@ -224,50 +133,53 @@ const technolodzyOptions = [
             wstrzymane: tasks.filter(t => t.status === 'Oczekuje').length
           }), [tasks, filteredTasks]);
 
-          
-    const addTask = async (newTask) => {
-      const current = getTasksLS();
-      const next = [...current, { ...newTask, id: Date.now() }];
-      setTasksLS(next);
-      await loadTasks();
-      setShowAddForm(false);
-    };
-    
+          const addTask = async (newTask) => {
+            try {
+              const response = await fetch(`${API_URL}/tasks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newTask)
+              });
+              if (response.ok) { await loadTasks(); setShowAddForm(false); } 
+              else { alert('Błąd dodawania zadania'); }
+            } catch (err) { console.error('Błąd:', err); alert('Nie można połączyć z serwerem'); }
+          };
 
-          
-    const updateTask = async (updatedTask) => {
-      const current = getTasksLS();
-      const next = current.map(t => t.id === updatedTask.id ? updatedTask : t);
-      setTasksLS(next);
-      await loadTasks();
-      setShowEditForm(false);
-      setSelectedTask(updatedTask);
-    };
-    
+          const updateTask = async (updatedTask) => {
+            try {
+              const response = await fetch(`${API_URL}/tasks/${updatedTask.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedTask)
+              });
+              if (response.ok) { await loadTasks(); setShowEditForm(false); setSelectedTask(updatedTask); } 
+              else { alert('Błąd aktualizacji zadania'); }
+            } catch (err) { console.error('Błąd:', err); alert('Nie można połączyć z serwerem'); }
+          };
 
-          
-    const deleteTask = async (taskId) => {
-      if (!confirm('Czy na pewno chcesz usunąć to zadanie?')) return;
-      const current = getTasksLS();
-      const next = current.filter(t => t.id !== taskId);
-      setTasksLS(next);
-      await loadTasks();
-      setSelectedTask(null);
-    };
-    
+          const deleteTask = async (taskId) => {
+            if (!confirm('Czy na pewno chcesz usunąć to zadanie?')) return;
+            try {
+              const response = await fetch(`${API_URL}/tasks/${taskId}`, { method: 'DELETE' });
+              if (response.ok) { await loadTasks(); setSelectedTask(null); } 
+              else { alert('Błąd usuwania zadania'); }
+            } catch (err) { console.error('Błąd:', err); alert('Nie można połączyć z serwerem'); }
+          };
 
-          
-    const exportBackup = async () => {
-      const data = JSON.stringify(getTasksLS(), null, 2);
-      const blob = new Blob([data], {type: 'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'tasks-backup.json';
-      a.click();
-      URL.revokeObjectURL(url);
-    };
-    
+          const exportBackup = async () => {
+            try {
+              const response = await fetch(`${API_URL}/backup`);
+              const blob = await response.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `tasks-backup-${new Date().toISOString().slice(0,10)}.json`;
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(url);
+              document.body.removeChild(a);
+            } catch (err) { console.error('Błąd:', err); alert('Nie można wyeksportować danych'); }
+          };
 
           // ROZSZERZONY FORMULARZ DODAWANIA (wszystkie pola z Power Apps)
           const TaskForm = ({ task, onSubmit, onCancel }) => {
@@ -763,20 +675,6 @@ const technolodzyOptions = [
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<PlanningTaskManager />);
-    
-  // prosta kontrola "sesji" (client-side only)
-  function ensureLoggedIn() {
-    try {
-      const flag = localStorage.getItem('ptm_logged_in');
-      if (!flag) {
-        window.location.href = './login.html';
-      }
-    } catch (_) {
-      // jeśli localStorage niedostępny, przejdź dalej
-    }
-  }
-  ensureLoggedIn();
-
-</script>
+    </script>
 </body>
 </html>
