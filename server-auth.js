@@ -1,26 +1,90 @@
 const express = require('express');
-const fs = require('fs').promises;
+const mongoose = require('mongoose');
 const path = require('path');
 const cors = require('cors');
 const session = require('express-session');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const TASKS_FILE = path.join(__dirname, 'tasks.json');
-const USERS_FILE = path.join(__dirname, 'users.json');
 
-// POPRAWIONA konfiguracja sesji dla Render (HTTPS)
+// MongoDB connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/planning-task-manager';
+
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('✓ Połączono z MongoDB Atlas'))
+  .catch(err => console.error('✗ Błąd połączenia z MongoDB:', err));
+
+// Models
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  fullName: { type: String, required: true },
+  role: { type: String, default: 'user' }
+});
+
+const taskSchema = new mongoose.Schema({
+  nrZlecenia: String,
+  klient: String,
+  urzadzenie: String,
+  typUrzadzenia: String,
+  nrInwentarzowy: String,
+  opis: String,
+  priorytet: String,
+  status: { type: String, default: 'Nowe' },
+  dataOdbioru: String,
+  dataRealizacji: String,
+  dataTworzenia: { type: String, default: () => new Date().toISOString().slice(0, 16).replace('T', ' ') },
+  utworzonePrzez: String,
+  odpowiedzialnyTechnik: String,
+  kosztMaterialow: Number,
+  kosztRobocizny: Number,
+  materialy: String,
+  kolory: String,
+  pakowanie: String,
+  montaz: String,
+  kategoria: String,
+  nrNiezgodnosci: String,
+  dotyczaceID: String,
+  powod: String,
+  uwagi: String,
+  ostatniaEdycjaPrzez: String,
+  dataOstatniejEdycji: String
+}, { timestamps: true });
+
+const User = mongoose.model('User', userSchema);
+const Task = mongoose.model('Task', taskSchema);
+
+// Inicjalizacja użytkowników (tylko raz)
+async function initializeUsers() {
+  try {
+    const count = await User.countDocuments();
+    if (count === 0) {
+      await User.create([
+        { username: 'admin', password: 'admin123', fullName: 'Administrator', role: 'admin' },
+        { username: 'witold', password: 'witold123', fullName: 'Witold Mikołajczak', role: 'admin' },
+        { username: 'user', password: 'user123', fullName: 'Użytkownik Testowy', role: 'user' }
+      ]);
+      console.log('✓ Utworzono domyślnych użytkowników');
+    }
+  } catch (error) {
+    console.error('Błąd inicjalizacji użytkowników:', error);
+  }
+}
+
+initializeUsers();
+
+// Session configuration
 app.use(session({
   secret: process.env.SESSION_SECRET || 'planning-task-manager-secret-key-2024',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // ZMIENIONE: false dla kompatybilności (Render używa proxy)
+    secure: false,
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24 godziny
-    sameSite: 'lax' // DODANE: dla lepszej kompatybilności
+    maxAge: 24 * 60 * 60 * 1000,
+    sameSite: 'lax'
   },
-  proxy: true // DODANE: Render używa proxy
+  proxy: true
 }));
 
 // Middleware
@@ -40,14 +104,12 @@ function requireAuth(req, res, next) {
 
 // Serwuj pliki statyczne z kontrolą dostępu
 app.use((req, res, next) => {
-  // Publiczne pliki - dostępne bez logowania
   const publicFiles = ['/login.html', '/test-connection.html'];
   
   if (publicFiles.includes(req.path) || req.path.startsWith('/api/login') || req.path.startsWith('/api/check-session')) {
     return next();
   }
   
-  // Inne pliki wymagają logowania
   if (req.path.endsWith('.html') || req.path === '/') {
     if (!req.session || !req.session.userId) {
       return res.redirect('/login.html');
@@ -59,46 +121,11 @@ app.use((req, res, next) => {
 
 app.use(express.static(__dirname));
 
-// Pomocnicza funkcja do odczytu użytkowników
-async function readUsers() {
-  try {
-    const data = await fs.readFile(USERS_FILE, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    console.error('Błąd odczytu users.json:', error);
-    return [];
-  }
-}
-
-// Pomocnicza funkcja do odczytu zadań
-async function readTasks() {
-  try {
-    const data = await fs.readFile(TASKS_FILE, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    console.error('Błąd odczytu tasks.json:', error);
-    return [];
-  }
-}
-
-// Pomocnicza funkcja do zapisu zadań
-async function writeTasks(tasks) {
-  try {
-    await fs.writeFile(TASKS_FILE, JSON.stringify(tasks, null, 2), 'utf8');
-    return true;
-  } catch (error) {
-    console.error('Błąd zapisu tasks.json:', error);
-    return false;
-  }
-}
-
 // ==========================================
 // AUTHENTICATION ENDPOINTS
 // ==========================================
 
-// Sprawdź sesję
 app.get('/api/check-session', (req, res) => {
-  console.log('Sprawdzanie sesji:', req.session); // DEBUG
   if (req.session && req.session.userId) {
     res.json({
       loggedIn: true,
@@ -114,40 +141,34 @@ app.get('/api/check-session', (req, res) => {
   }
 });
 
-// Login endpoint
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     
-    console.log('Próba logowania:', username); // DEBUG
+    console.log('Próba logowania:', username);
     
     if (!username || !password) {
       return res.status(400).json({ error: 'Brak nazwy użytkownika lub hasła' });
     }
     
-    const users = await readUsers();
-    const user = users.find(u => u.username === username && u.password === password);
+    const user = await User.findOne({ username, password });
     
     if (user) {
-      // Zapisz dane użytkownika w sesji
-      req.session.userId = user.id;
+      req.session.userId = user._id.toString();
       req.session.username = user.username;
       req.session.fullName = user.fullName;
       req.session.role = user.role;
       
-      // WAŻNE: Zapisz sesję przed odpowiedzią
       req.session.save((err) => {
         if (err) {
           console.error('Błąd zapisu sesji:', err);
           return res.status(500).json({ error: 'Błąd zapisu sesji' });
         }
         
-        console.log('Sesja zapisana:', req.session); // DEBUG
-        
         res.json({
           success: true,
           user: {
-            id: user.id,
+            id: user._id,
             username: user.username,
             fullName: user.fullName,
             role: user.role
@@ -163,7 +184,6 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Logout endpoint
 app.post('/api/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) {
@@ -174,7 +194,6 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-// Pobierz dane zalogowanego użytkownika
 app.get('/api/current-user', requireAuth, (req, res) => {
   res.json({
     id: req.session.userId,
@@ -185,24 +204,22 @@ app.get('/api/current-user', requireAuth, (req, res) => {
 });
 
 // ==========================================
-// TASKS ENDPOINTS (chronione autoryzacją)
+// TASKS ENDPOINTS
 // ==========================================
 
-// GET - Pobierz wszystkie zadania
 app.get('/api/tasks', requireAuth, async (req, res) => {
   try {
-    const tasks = await readTasks();
+    const tasks = await Task.find().sort({ createdAt: -1 });
     res.json(tasks);
   } catch (error) {
+    console.error('Błąd pobierania zadań:', error);
     res.status(500).json({ error: 'Błąd pobierania zadań' });
   }
 });
 
-// GET - Pobierz jedno zadanie po ID
 app.get('/api/tasks/:id', requireAuth, async (req, res) => {
   try {
-    const tasks = await readTasks();
-    const task = tasks.find(t => t.id === parseInt(req.params.id));
+    const task = await Task.findById(req.params.id);
     
     if (task) {
       res.json(task);
@@ -210,172 +227,118 @@ app.get('/api/tasks/:id', requireAuth, async (req, res) => {
       res.status(404).json({ error: 'Zadanie nie znalezione' });
     }
   } catch (error) {
+    console.error('Błąd pobierania zadania:', error);
     res.status(500).json({ error: 'Błąd pobierania zadania' });
   }
 });
 
-// POST - Dodaj nowe zadanie
 app.post('/api/tasks', requireAuth, async (req, res) => {
   try {
-    const tasks = await readTasks();
-    const newTask = {
+    const newTask = new Task({
       ...req.body,
-      id: tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1,
-      dataTworzenia: new Date().toISOString().slice(0, 16).replace('T', ' '),
       utworzonePrzez: req.session.fullName || req.session.username
-    };
+    });
     
-    tasks.push(newTask);
-    const success = await writeTasks(tasks);
+    await newTask.save();
+    console.log('✓ Zadanie zapisane w MongoDB:', newTask._id);
     
-    if (success) {
-      res.status(201).json(newTask);
-    } else {
-      res.status(500).json({ error: 'Błąd zapisu zadania' });
-    }
+    res.status(201).json(newTask);
   } catch (error) {
+    console.error('Błąd dodawania zadania:', error);
     res.status(500).json({ error: 'Błąd dodawania zadania' });
   }
 });
 
-// PUT - Aktualizuj zadanie
 app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   try {
-    const tasks = await readTasks();
-    const index = tasks.findIndex(t => t.id === parseInt(req.params.id));
-    
-    if (index !== -1) {
-      tasks[index] = { 
-        ...tasks[index], 
+    const task = await Task.findByIdAndUpdate(
+      req.params.id,
+      {
         ...req.body,
         ostatniaEdycjaPrzez: req.session.fullName || req.session.username,
         dataOstatniejEdycji: new Date().toISOString().slice(0, 16).replace('T', ' ')
-      };
-      const success = await writeTasks(tasks);
-      
-      if (success) {
-        res.json(tasks[index]);
-      } else {
-        res.status(500).json({ error: 'Błąd aktualizacji zadania' });
-      }
+      },
+      { new: true }
+    );
+    
+    if (task) {
+      console.log('✓ Zadanie zaktualizowane:', task._id);
+      res.json(task);
     } else {
       res.status(404).json({ error: 'Zadanie nie znalezione' });
     }
   } catch (error) {
+    console.error('Błąd aktualizacji zadania:', error);
     res.status(500).json({ error: 'Błąd aktualizacji zadania' });
   }
 });
 
-// DELETE - Usuń zadanie
 app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
   try {
-    const tasks = await readTasks();
-    const filteredTasks = tasks.filter(t => t.id !== parseInt(req.params.id));
+    const task = await Task.findByIdAndDelete(req.params.id);
     
-    if (filteredTasks.length < tasks.length) {
-      const success = await writeTasks(filteredTasks);
-      
-      if (success) {
-        res.json({ message: 'Zadanie usunięte', id: parseInt(req.params.id) });
-      } else {
-        res.status(500).json({ error: 'Błąd usuwania zadania' });
-      }
+    if (task) {
+      console.log('✓ Zadanie usunięte:', task._id);
+      res.json({ message: 'Zadanie usunięte', id: task._id });
     } else {
       res.status(404).json({ error: 'Zadanie nie znalezione' });
     }
   } catch (error) {
+    console.error('Błąd usuwania zadania:', error);
     res.status(500).json({ error: 'Błąd usuwania zadania' });
   }
 });
 
-// Backup - Eksportuj wszystkie dane
 app.get('/api/backup', requireAuth, async (req, res) => {
   try {
-    const tasks = await readTasks();
+    const tasks = await Task.find();
     const timestamp = new Date().toISOString().replace(/:/g, '-').slice(0, 19);
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="tasks-backup-${timestamp}.json"`);
     res.send(JSON.stringify(tasks, null, 2));
   } catch (error) {
+    console.error('Błąd tworzenia backupu:', error);
     res.status(500).json({ error: 'Błąd tworzenia backupu' });
   }
 });
 
-// Import - Zaimportuj dane z backupu
 app.post('/api/import', requireAuth, async (req, res) => {
   try {
     const importedTasks = req.body;
     
     if (Array.isArray(importedTasks)) {
-      const success = await writeTasks(importedTasks);
-      
-      if (success) {
-        res.json({ message: 'Dane zaimportowane pomyślnie', count: importedTasks.length });
-      } else {
-        res.status(500).json({ error: 'Błąd importu danych' });
-      }
+      await Task.insertMany(importedTasks);
+      res.json({ message: 'Dane zaimportowane pomyślnie', count: importedTasks.length });
     } else {
       res.status(400).json({ error: 'Nieprawidłowy format danych' });
     }
   } catch (error) {
+    console.error('Błąd importu danych:', error);
     res.status(500).json({ error: 'Błąd importu danych' });
   }
 });
 
-// Funkcja do pobrania lokalnego IP
-const os = require('os');
-function getLocalIP() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return 'localhost';
-}
-
-// Start serwera - nasłuchuj na wszystkich interfejsach (0.0.0.0)
+// Start serwera
 app.listen(PORT, '0.0.0.0', () => {
-  const localIP = getLocalIP();
   console.log(`
 ===============================================================
-  Planning Task Manager - Serwer API (z Logowaniem)
+  Planning Task Manager - MongoDB Edition
 ===============================================================
-  DOSTEP LOKALNY:
-  http://localhost:${PORT}
-  http://127.0.0.1:${PORT}
-
-  DOSTEP W SIECI LOKALNEJ:
-  http://${localIP}:${PORT}
-
-  LOGOWANIE:
-  http://${localIP}:${PORT}/login.html
-
+  Port: ${PORT}
+  MongoDB: ${MONGODB_URI ? '✓ Skonfigurowane' : '✗ Brak'}
   Environment: ${process.env.NODE_ENV || 'development'}
   
-  Pliki:
-  - Dane: tasks.json
-  - Uzytkownicy: users.json
-
-  Dostepne endpointy:
-  AUTH:
-  POST   /api/login          - Zaloguj sie
-  POST   /api/logout         - Wyloguj sie
-  GET    /api/check-session  - Sprawdz sesje
-  GET    /api/current-user   - Pobierz dane usera
-
-  TASKS (wymagaja logowania):
-  GET    /api/tasks          - Pobierz wszystkie
-  GET    /api/tasks/:id      - Pobierz jedno
-  POST   /api/tasks          - Dodaj nowe
-  PUT    /api/tasks/:id      - Zaktualizuj
-  DELETE /api/tasks/:id      - Usun
-  GET    /api/backup         - Eksportuj backup
-  POST   /api/import         - Importuj dane
-
- 
+  Endpointy:
+  - POST /api/login
+  - GET  /api/tasks
+  - POST /api/tasks
+  - PUT  /api/tasks/:id
+  - DELETE /api/tasks/:id
+  
+  Konta domyślne:
+  - admin / admin123
+  - witold / witold123
+  - user / user123
 ===============================================================
   `);
 });
