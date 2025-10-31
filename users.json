@@ -15,6 +15,13 @@
   },
   {
     "id": 3,
+    "username": "test",
+    "password": "test123",
+    "fullName": "Tester",
+    "role": "user"
+  },
+  {
+    "id": 4,
     "username": "user",
     "password": "user123",
     "fullName": "Użytkownik Testowy",
